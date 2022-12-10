@@ -17,6 +17,7 @@ library(tidyr)
 library(corrplot)
 library(plotly)
 library(caret)
+library(randomForest)
 ```
 
 # 1. Cel projektu
@@ -75,6 +76,8 @@ col_count <- ncol(herring)
 
 ## 4.1. Podsumowanie statystyk wartości atrybutów danych nieoczyszczonych
 
+Poniżej znajduje się podsumowanie metryk wczytanego zbioru danych.
+
 ```{r raw_data_summary}
 knitr::kable(summary(herring))
 ```
@@ -92,11 +95,15 @@ herring_clear <- herring
 
 ## 4.2. Podsumowanie statystyk atrybutów oczyszczonego zbioru danych
 
+Poniżej znajduje się podsumowanie metryk oczyszczonego zbioru danych.
+
 ```{r data_summary}
 knitr::kable(summary(herring_clear[-1]))
 ```
 
 ## 4.3. Przykladowe wiersze ze zbioru danych
+
+Poniżej znajduje się przykładowe wartości z oczyszczonego zbioru danych.
 
 ```{r data_example}
 knitr::kable(head(herring_clear))
@@ -275,9 +282,11 @@ corrplot(correlation_data, method="square", type="upper")
 progress <- ggplot(herring_clear, aes(x=X, y = length)) + geom_line()
 ```
 
+Po analizie korelacji zdecydowano, że największy wpływ na rozmiar śledzia ma temperatura wody przy powierzchni wody.
+
 # 7. Zmiana rozmiaru śledzi w czasie
 
-Długość śledzia w kolejnych pomiarach
+Długość śledzia w kolejnych pomiarach.
 
 ```{r length_plot, echo=FALSE, message=FALSE, include=TRUE}
 ggplotly(ggplot(herring_clear, aes(x = X, y = length)) + 
@@ -287,12 +296,13 @@ ggplotly(ggplot(herring_clear, aes(x = X, y = length)) +
   ylab("Długość śledzia"))
 ```
 
+Do stworzenia powyższonego wykresu stworzono wartość porządkową X (wskazująca na numer obserwacji) i odpowiadającą jej długość śledzia.
+
 # 8. Regresor przewidujący rozmiar śledzia
 
-Do stworzenia regresora przewidującego rozmiar śledzia wykorzystano algorytm KNN z użyciem Repeated Cross Validation.
-Najlepsze wyniki dawał dla predykcji długości śledzia.
+Do stworzenia regresora przewidującego rozmiar śledzia wykorzystano algorytmy KNN z użyciem Repeated Cross Validation oraz Random Forest.
 
-```{r knn_data}
+```{r regressor_data}
 set.seed(21)
 herring_clear_without_index <- herring_clear[-1]
 
@@ -318,11 +328,13 @@ knitr::kable(summary(training_data))
 knitr::kable(summary(testing_data))
 ```
 
+## 8.3. KNN
+
 
 ```{r knn_training}
 ctrl <- trainControl(method="repeatedcv", number = 3, repeats = 3)
 
-training <- train(length ~ .,
+training_knn <- train(length ~ .,
                   data = training_data,
                   method = "knn",
                   trControl = ctrl, 
@@ -330,49 +342,77 @@ training <- train(length ~ .,
                   tuneLength = 20)
 ```
 
+### 8.3.1. Efekt treningu regresora
 
-## 8.3. Efekt treningu regresora
-
-```{r training_summary}
-training
-ggplotly(ggplot(training) + theme_bw())
+```{r knn_training_summary}
+training_knn
+ggplotly(ggplot(training_knn) + theme_bw())
 ```
 
 ```{r knn_predicting}
-testing <- predict(training, newdata = testing_data)
+testing_knn <- predict(training_knn, newdata = testing_data)
 ```
 
-## 8.4. Predykcja regresora
+### 8.3.2. Predykcja regresora
 
-```{r predicting_summary}
-head(testing)
+```{r knn_predicting_summary}
+head(testing_knn)
+```
+## 8.4. Random Forest
 
-#plot_data <- data.frame(Prediction = testing, Length = testing_data$length)
-#ggplot(plot_data, aes(x = Prediction, y = Length)) +
-#  geom_point() +
-#  geom_abline(intercept = 0, slope = 1, color = "green")
+```{r rf_training}
+ctrl <- trainControl(method="repeatedcv", number = 3, repeats = 3)
+
+training_rf <- train(length ~ .,
+                  data = training_data,
+                  method = "rf",
+                  trControl = ctrl, 
+                  preProcess = c("center","scale"), 
+                  ntree = 40)
 ```
 
-```{r measures}
-#rmse <- sqrt(mean((testing_data$length - testing)^2))
-#rSquare <- 1 - (sum((testing_data$length - testing)^2)/sum((testing_data$length - mean(testing_data$length))^2))
-#measures <- rbind(
-#    cbind(dane="treningowe", training$results[1,c("RMSE", "Rsquared")]), 
-#    data.frame(dane="testowe", RMSE=rmse, Rsquared=rSquare))
-#knitr::kable(measures)
+### 8.4.1. Efekt treningu regresora
+
+```{r rf_training_summary}
+training_rf
+ggplotly(ggplot(training_rf) + theme_bw())
+```
+
+```{r rf_predicting}
+testing_rf <- predict(training_rf, newdata = testing_data)
+```
+
+### 8.4.2. Predykcja regresora
+
+```{r rf_predicting_summary}
+head(testing_rf)
 ```
 
 # 9. Analiza ważności atrybutów
 
 Najważniejszym atrybutem okazała się temperatura przy powierzchni wody. Oznacza to, że to właśnie ona ma największy wpływ na długość śledzi.
 
-```{r importance}
+## 9.1. KNN
 
-mod_vals <- data.frame(obs = testing_data$length, pred = testing)
-knitr::kable(summary(mod_vals))
+```{r importance_knn}
 
-importance <- varImp(training, scale = FALSE)
-ggplotly(ggplot(importance))
+mod_vals_knn <- data.frame(obs = testing_data$length, pred = testing_knn)
+knitr::kable(summary(mod_vals_knn))
+
+importance_knn <- varImp(training_knn, scale = FALSE)
+ggplotly(ggplot(importance_knn))
+
+```
+
+## 9.2. Random Forest
+
+```{r importance_rf}
+
+mod_vals_rf <- data.frame(obs = testing_data$length, pred = testing_rf)
+knitr::kable(summary(mod_vals_rf))
+
+importance_rf <- varImp(training_rf, scale = FALSE)
+ggplotly(ggplot(importance_rf))
 
 ```
 
