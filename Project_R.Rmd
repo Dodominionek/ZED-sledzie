@@ -1,0 +1,379 @@
+---
+title: "Projekt_R_Sledzie"
+author: "Dominik Tomkiewicz 140793"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(tidyr)
+library(corrplot)
+library(plotly)
+library(caret)
+```
+
+# 1. Cel projektu
+
+Śledzie są jednym ze składników wielu świątecznych dań na stołach polskich rodzin. Niestety w ostatnich latach badacze zauważyli niepokojący trend karłowacenia śledzia oceanicznego. Celem projektu jest analiza danych o połowach śledzi oceanicznych wyławianych w Europie i wskazanie głównej przyczyny zjawiska ich karłowacenia.
+
+
+# 2. Podsumowanie analizy
+
+Analiza danych dowiodła, że największym wpływem na występowanie zjawiska karłowacenia śledzi ma temperatura przy powierzchni wody. W trakcie jej dokonywania okazało się, że część rekordów była pusta. Aby poradzić sobie z tym problemem postanowiono puste wpisy zastąpić średnimi wartościami dla kolumn im odpowiadającym. Kolejnym problemem było to, że wpisy nie posiadały szczegółowej informacji na temat daty dokonania połowu. Z tego powodu ciężko było przygotować wykres rozmiaru śledzia na przestrzeni lat. Przyjęto, że wpisy dotyczące obserwacji są ułożone chronologicznie o na podstawie tego założenia przygotowano odpowiedni wykres.
+
+# 3. Wykorzystane narzędzia
+
+W ramach projektu wykorzystano następujące pakiety:
+
+* ggplot2
+* dplyr
+* knitr
+* tidyr
+* corrplot
+* plotly
+* caret
+
+```{r data_loading}
+herring <- read.csv('sledzie.csv', header=T, sep=',')
+```
+
+# 4. Informacje o zbiorze danych
+
+W zbiorze danych występują poniższe kolumny:
+
+* length: długość złowionego śledzia [cm];
+* cfin1: dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1];
+* cfin2: dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2];
+* chel1: dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1];
+* chel2: dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2];
+* lcop1: dostępność planktonu [zagęszczenie widłonogów gat. 1];
+* lcop2: dostępność planktonu [zagęszczenie widłonogów gat. 2];
+* fbar: natężenie połowów w regionie [ułamek pozostawionego narybku];
+* recr: roczny narybek [liczba śledzi];
+* cumf: łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku];
+* totaln: łączna liczba ryb złowionych w ramach połowu [liczba śledzi];
+* sst: temperatura przy powierzchni wody [°C];
+* sal: poziom zasolenia wody [Knudsen ppt];
+* xmonth: miesiąc połowu [numer miesiąca];
+* nao: oscylacja północnoatlantycka [mb].
+
+Zbiór składa się z:
+```{r data_count}
+row_count <- nrow(herring)
+col_count <- ncol(herring)
+
+```
+
+* `r row_count` wierszy i `r col_count` kolumn.
+
+## 4.1. Podsumowanie statystyk wartości atrybutów danych nieoczyszczonych
+
+```{r raw_data_summary}
+knitr::kable(summary(herring))
+```
+
+Jak już wspomniano wcześniej część rekordów w zbiorze danych miało wartości puste. Z tego powodu zastąpiono je wartościami średnimi dla kolumn, w których one występują. W ten sposób "oczyszczono" zbiór danych. Ponadto jako, że kolumna X jest indeksem pomiaru postanowiono ją w pewnych przypadkach (dla sekcji zajmującej się regresorem oraz korelacji) usunąć. Poniżej podsuumowanie oczyszczonego zbioru danych.
+
+```{r data_cleaning}
+herring[herring=="?"] <- NA 
+herring <- mutate_all(herring, function(x) { as.numeric(as.character(x)) })
+for(i in 1:ncol(herring)){
+  herring[is.na(herring[,i]), i] <- mean(herring[,i], na.rm = TRUE)
+}
+herring_clear <- herring
+```
+
+## 4.2. Podsumowanie statystyk atrybutów oczyszczonego zbioru danych
+
+```{r data_summary}
+knitr::kable(summary(herring_clear[-1]))
+```
+
+## 4.3. Przykladowe wiersze ze zbioru danych
+
+```{r data_example}
+knitr::kable(head(herring_clear))
+```
+
+# 5. Analiza wartości atrybutów
+
+Poniżej przedstawiono analizę poszczególnych atrybutów. Dla każdego z nich dodano wizualizację jak dany atrybut ma się do długości złowionych śledzi (kolor słupków). Na podstawie metryk zbioru danych ustalono zakres osi X dla wykresów.
+
+Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1]
+
+```{r cfin1_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(cfin1, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 5, by = 1)) + 
+  labs(fill="length") +
+  ggtitle("cfin1") +
+  xlab("Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1])") + 
+  ylab("Liczba obserwacji"))
+
+```
+
+Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2]
+
+```{r cfin2_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(cfin2, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 20, by = 1)) + 
+  labs(fill="length") +
+  ggtitle("cfin2") +
+  xlab("Dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1]
+
+```{r chel1_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(chel1, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 75, by = 5)) + 
+  labs(fill="length") +
+  ggtitle("chel1") +
+  xlab("Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2]
+
+```{r chel2_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(chel2, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 60, by = 5)) + 
+  labs(fill="length") +
+  ggtitle("chel2") +
+  xlab("Dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Dostępność planktonu [zagęszczenie widłonogów gat. 1]
+
+```{r lcop1_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(lcop1, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 80, by = 5)) + 
+  labs(fill="length") +
+  ggtitle("lcop1") +
+  xlab("Dostępność planktonu [zagęszczenie widłonogów gat. 1]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Dostępność planktonu [zagęszczenie widłonogów gat. 2]
+
+```{r lcop2_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(lcop2, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 70, by = 5)) + 
+  labs(fill="length") +
+  ggtitle("lcop2") +
+  xlab("Dostępność planktonu [zagęszczenie widłonogów gat. 2]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Natężenie połowów w regionie [ułamek pozostawionego narybku]
+
+```{r fbar_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(fbar, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 0.9, by = 0.03)) + 
+  labs(fill="length") +
+  ggtitle("fbar") +
+  xlab("Natężenie połowów w regionie [ułamek pozostawionego narybku]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Roczny narybek [liczba śledzi]
+
+```{r recr_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(recr, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 1600000, by = 50000)) + 
+  labs(fill="length") +
+  ggtitle("recr") +
+  xlab("Roczny narybek [liczba śledzi]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku]
+
+```{r cumf_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(cumf, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 0.4, by = 0.02)) + 
+  labs(fill="length") +
+  ggtitle("cumf") +
+  xlab("Łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Łączna liczba ryb złowionych w ramach połowu [liczba śledzi]
+
+```{r totaln_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(totaln, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 1100000, by = 50000)) + 
+  labs(fill="length") +
+  ggtitle("totaln") +
+  xlab("Łączna liczba ryb złowionych w ramach połowu [liczba śledzi]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Temperatura przy powierzchni wody [°C]
+
+```{r sst_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(sst, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(12, 15, by = 0.1)) + 
+  labs(fill="length") +
+  ggtitle("sst") +
+  xlab("Temperatura przy powierzchni wody [°C]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Poziom zasolenia wody [Knudsen ppt]
+
+```{r sal_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(sal, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(35.35, 35.65, by = 0.03)) + 
+  labs(fill="length") +
+  ggtitle("sal") +
+  xlab("Poziom zasolenia wody [Knudsen ppt]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Miesiąc połowu [numer miesiąca]
+
+```{r xmonth_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(xmonth, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(0, 12, by = 1)) + 
+  labs(fill="length") +
+  ggtitle("xmonth") +
+  xlab("Miesiąc połowu [numer miesiąca]") + 
+  ylab("Liczba obserwacji"))
+```
+
+Oscylacja północnoatlantycka [mb]
+
+```{r nao_plot, echo=FALSE, message=FALSE, include=TRUE, cache=TRUE}
+ggplotly(ggplot(data=herring_clear, aes(nao, fill=factor(floor(length)))) + 
+  geom_histogram(alpha = 0.8, breaks=seq(-5, 5, by = 1)) + 
+  labs(fill="length") +
+  ggtitle("nao") +
+  xlab("Oscylacja północnoatlantycka [mb]") + 
+  ylab("Liczba obserwacji"))
+```
+
+# 6. Korelacja między zmiennymi
+
+Poniżej przedstawiono korelację między zmiennymi w zbiorze danych wraz z jej graficzną reprezentacją.
+
+```{r preparing_plots, cache=T}
+correlation_data <- cor(herring_clear[-1])
+knitr::kable(correlation_data)
+correlation_length <- cor(herring_clear[-1], y=herring_clear$length)
+knitr::kable(correlation_length)
+corrplot(correlation_data, method="square", type="upper")
+
+progress <- ggplot(herring_clear, aes(x=X, y = length)) + geom_line()
+```
+
+# 7. Zmiana rozmiaru śledzi w czasie
+
+Długość śledzia w kolejnych pomiarach
+
+```{r length_plot, echo=FALSE, message=FALSE, include=TRUE}
+ggplotly(ggplot(herring_clear, aes(x = X, y = length)) + 
+  geom_smooth() +
+  ggtitle("length") +
+  xlab("Pomiar") + 
+  ylab("Długość śledzia"))
+```
+
+# 8. Regresor przewidujący rozmiar śledzia
+
+Do stworzenia regresora przewidującego rozmiar śledzia wykorzystano algorytm KNN z użyciem Repeated Cross Validation.
+Najlepsze wyniki dawał dla predykcji długości śledzia.
+
+```{r knn_data}
+set.seed(21)
+herring_clear_without_index <- herring_clear[-1]
+
+partition <- createDataPartition(
+  y = herring_clear_without_index$length,
+  p = .75,
+  list = FALSE
+)
+
+training_data <- herring_clear_without_index[partition,]
+testing_data <- herring_clear_without_index[-partition,]
+```
+
+## 8.1. Podsumowanie danych treningowych
+
+```{r training_data}
+knitr::kable(summary(training_data))
+```
+
+## 8.2. Podsumowanie danych testowych
+
+```{r testing_data}
+knitr::kable(summary(testing_data))
+```
+
+
+```{r knn_training}
+ctrl <- trainControl(method="repeatedcv", number = 3, repeats = 3)
+
+training <- train(length ~ .,
+                  data = training_data,
+                  method = "knn",
+                  trControl = ctrl, 
+                  preProcess = c("center","scale"), 
+                  tuneLength = 20)
+```
+
+
+## 8.3. Efekt treningu regresora
+
+```{r training_summary}
+training
+ggplotly(ggplot(training) + theme_bw())
+```
+
+```{r knn_predicting}
+testing <- predict(training, newdata = testing_data)
+```
+
+## 8.4. Predykcja regresora
+
+```{r predicting_summary}
+head(testing)
+
+#plot_data <- data.frame(Prediction = testing, Length = testing_data$length)
+#ggplot(plot_data, aes(x = Prediction, y = Length)) +
+#  geom_point() +
+#  geom_abline(intercept = 0, slope = 1, color = "green")
+```
+
+```{r measures}
+#rmse <- sqrt(mean((testing_data$length - testing)^2))
+#rSquare <- 1 - (sum((testing_data$length - testing)^2)/sum((testing_data$length - mean(testing_data$length))^2))
+#measures <- rbind(
+#    cbind(dane="treningowe", training$results[1,c("RMSE", "Rsquared")]), 
+#    data.frame(dane="testowe", RMSE=rmse, Rsquared=rSquare))
+#knitr::kable(measures)
+```
+
+# 9. Analiza ważności atrybutów
+
+Najważniejszym atrybutem okazała się temperatura przy powierzchni wody. Oznacza to, że to właśnie ona ma największy wpływ na długość śledzi.
+
+```{r importance}
+
+mod_vals <- data.frame(obs = testing_data$length, pred = testing)
+knitr::kable(summary(mod_vals))
+
+importance <- varImp(training, scale = FALSE)
+ggplotly(ggplot(importance))
+
+```
+
+
